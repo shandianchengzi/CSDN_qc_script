@@ -77,7 +77,7 @@ function webQuest(url, method, headers, data, callback) {
             // 处理响应
             callback(xhr.responseText);
         } else if (xhr.status !== 200) {
-            alert("请求 " + url + " 失败，状态码：" + xhr.status);
+            alert("请求 " + url + " 失败，状态码：" + xhr.status + "，请在脚本面板中重新设置 Headers/CSDN ID 或者检查网络代理等状况。" );
         }
     };
 }
