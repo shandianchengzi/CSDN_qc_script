@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         CSDN质量分显示按钮
 // @namespace    http://tampermonkey.net/
-// @version      v1.0
-// @description  try to take over the world!
+// @version      1.0
+// @description  用于快速查询编辑页CSDN博客质量分的浏览器脚本，详细描述见https://blog.csdn.net/qq_46106285/article/details/138357755
 // @author       shandianchengzi
 // @match        https://editor.csdn.net/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=csdn.net
