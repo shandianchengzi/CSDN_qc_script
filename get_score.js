@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CSDN质量分显示按钮
 // @namespace    http://tampermonkey.net/
-// @version      1.2
+// @version      1.3
 // @description  用于快速查询编辑页CSDN博客质量分的浏览器脚本，详细描述见https://blog.csdn.net/qq_46106285/article/details/138357755
 // @author       shandianchengzi
 // @match        https://editor.csdn.net/*
@@ -40,6 +40,8 @@ var values_info = {
         "null_ok_if": "CSDN_QC_ID"
     },
 }
+
+var href = window.location.href;
 
 // return true if value equals to null
 function isNull(value){
@@ -108,12 +110,11 @@ function webQuest(url, method, headers, data, callback) {
 
 function get_csdn_id(){
     // get csdn_id from href
-    let href = window.location.href;
     let id_info = { id: null, id_type: null}
-    // get csdn_id from href, eg: https://blog.csdn.net/{id}/article/details/138357755
+    // eg: https://blog.csdn.net/{id}/article/details/138357755
     id_info.id = href.match(/blog.csdn.net\/(\w+)/);
     id_info.id_type = "CSDN_QC_ID";
-    // get csdn_id from href, eg: https://{id}.blog.csdn.net/article/details/138357755
+    // eg: https://{id}.blog.csdn.net/article/details/138357755
     if (id_info.id == null){
         id_info.id = href.match(/(\w+)\.blog.csdn.net/);
         id_info.id_type = "CSDN_QC_DOMAIN_ID";
@@ -124,13 +125,11 @@ function get_csdn_id(){
     return id_info;
 }
 
-function get_article_id(){
+function get_article_id(href){
     // get article_id from href
-    let href = window.location.href;
-    let url = null;
-    // get article_id from href, eg: https://editor.csdn.net/md?not_checkout=1&spm=1011.2415.3001.6217&articleId=138357755
+    // eg: https://editor.csdn.net/md?not_checkout=1&spm=1011.2415.3001.6217&articleId=138357755
     let id = href.match(/articleId=(\d+)/);
-    // get article_id from href, eg: https://shandianchengzi.blog.csdn.net/article/details/138357755?spm=1001.2014.3001.5502
+    // eg: https://shandianchengzi.blog.csdn.net/article/details/138357755?spm=1001.2014.3001.5502
     if (id == null){
         id = href.match(/details\/(\d+)/);
     }
@@ -140,8 +139,8 @@ function get_article_id(){
     return id[1];
 }
 
-function get_article_url(values_info){
-    let id = get_article_id();
+function get_article_url(values_info, href){
+    let id = get_article_id(href);
     if (isNull(id)){
         alert("请先进入文章页面或编辑页再点击查询！");
         return "no need to fill";
@@ -174,14 +173,14 @@ function get_headers(values_info){
     return headers;
 }
 
-function questQC(values_info) {
+function questQC(values_info, href) {
     var url = "https://bizapi.csdn.net/trends/api/v1/get-article-score";
     var method = "POST";
     var callback = function (ret) {
         var response = JSON.parse(ret);
         Toast("质量分: " + response.data.score, 2000);
     }
-    let article_url = get_article_url(values_info);
+    let article_url = get_article_url(values_info, href);
     let headers = get_headers(values_info);
     // check article_url and headers
     if (isNull(article_url) || isNull(headers)){
@@ -246,6 +245,23 @@ function fill_values(only_fill_null=false, get_value=true){
     }
 }
 
+function createManyButton(){
+    // get all the article dom
+    var elements = document.querySelectorAll("article");
+    // add button to each #userSkin > div.user-profile-body > div > div.user-profile-body-right > div.navList-box > div.mainContent > div > article:nth-child(2)
+    for (var i = 0; i < elements.length; i++) {
+        var element = elements[i];
+        var url = element.querySelector("a").href;
+        // check if the button is already exist
+        if (element.querySelector("input") != null){
+            continue;
+        }
+        var button = createAButton(element, "质量", function(url){
+            questQC(values_info, url);
+        }.bind(null, url),"");
+    }
+}
+
 function init(){
     // try to get csdn_id from href
     let id_info = get_csdn_id();
@@ -257,8 +273,18 @@ function init(){
 async function mainFunc(){
     // init headers and csdn_id
     init();
-    createAButton(document.body,"质量分查询",function(){questQC(values_info);},
+    // check href, https://blog.csdn.net/{id}?type=blog or type=lately
+    if (href.match(/blog.csdn.net\/\w+\?type=blog/) || href.match(/blog.csdn.net\/\w+\?type=lately/)){
+        createManyButton();
+        // when load more, create button again
+        window.addEventListener("scroll", function(){
+            createManyButton();
+        });
+    }
+    else {
+        createAButton(document.body,"质量分查询",function(){questQC(values_info, href);},
     "height:75px;position:absolute;z-index:999;top:5%;left:1%");
+    }
 }
 
 (function() {
