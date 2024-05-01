@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CSDN质量分显示按钮
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      1.2
 // @description  用于快速查询编辑页CSDN博客质量分的浏览器脚本，详细描述见https://blog.csdn.net/qq_46106285/article/details/138357755
 // @author       shandianchengzi
 // @match        https://editor.csdn.net/*
@@ -144,7 +144,7 @@ function get_article_url(values_info){
     let id = get_article_id();
     if (isNull(id)){
         alert("请先进入文章页面或编辑页再点击查询！");
-        return null;
+        return "no need to fill";
     }
     if (!isNull(values_info["CSDN_QC_ID"]["value"])){
         return "https://blog.csdn.net/" + values_info["CSDN_QC_ID"]["value"] + "/article/details/" + id;
@@ -188,6 +188,10 @@ function questQC(values_info) {
         fill_values(false, true);
         return;
     }
+    // check if the url is start with http
+    if (!article_url.startsWith("http")){
+        return;
+    }
     var data = "url=" + article_url;
     webQuest(url, method, headers, data, callback);
 }
@@ -195,9 +199,8 @@ function questQC(values_info) {
 function userSetValue(key, hint=null, mode="gm", get_value=true){
     /* key: the key of the value
     * hint: the hint of the value
-    * only_fill_null: if true, only fill the value when it is null
     * mode: storage or gm, storage: store in local storage, gm: store in GM_setValue
-    * value: the value of the key
+    * get_value: if true, then get value from user, otherwise return the value directly
     * return: the value of the key
     */
     if (hint == null) hint = "请输入" + key + "的值";
@@ -272,5 +275,5 @@ async function mainFunc(){
         }
     }
     // add menu
-    GM_registerMenuCommand("参数填写", fill_values);
+    GM_registerMenuCommand("参数填写", fill_values.bind(null, false, true));
 })();
