@@ -1,27 +1,51 @@
 // ==UserScript==
 // @name         CSDN质量分显示按钮
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.1
 // @description  用于快速查询编辑页CSDN博客质量分的浏览器脚本，详细描述见https://blog.csdn.net/qq_46106285/article/details/138357755
 // @author       shandianchengzi
 // @match        https://editor.csdn.net/*
+// @match        https://blog.csdn.net/*/article/details/*
+// @match        https://*.blog.csdn.net/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=csdn.net
 // @grant        GM_registerMenuCommand
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @downloadURL https://update.greasyfork.org/scripts/493863/CSDN%E8%B4%A8%E9%87%8F%E5%88%86%E6%98%BE%E7%A4%BA%E6%8C%89%E9%92%AE.user.js
+// @updateURL https://update.greasyfork.org/scripts/493863/CSDN%E8%B4%A8%E9%87%8F%E5%88%86%E6%98%BE%E7%A4%BA%E6%8C%89%E9%92%AE.meta.js
 // ==/UserScript==
 
 // 主要配置项 访问 https://blog.csdn.net/qq_46106285/article/details/138357755 查看具体获取方式
-base_config = "null";
-var headers = {
-    "Content-Type": "application/x-www-form-urlencoded",
-    "Accept": "application/json, text/plain, */*",
-    "X-Ca-Key": base_config,
-    "X-Ca-Nonce": base_config,
-    "X-Ca-Signature": base_config,
-    "X-Ca-Signature-Headers": "x-ca-key,x-ca-nonce",
-    "X-Ca-Signed-Content-Type": "multipart/form-data",
+var values_info = {
+    "CSDN_QC_X-Ca-Key": {
+        "hint": "X-Ca-Key",
+        "storage_method": "gm"
+    },
+    "CSDN_QC_X-Ca-Nonce": {
+        "hint": "X-Ca-Nonce",
+        "storage_method": "gm"
+    },
+    "CSDN_QC_X-Ca-Signature": {
+        "hint": "X-Ca-Signature",
+        "storage_method": "gm"
+    },
+    "CSDN_QC_ID": {
+        "hint": "CSDN ID (即个人主页 https://blog.csdn.net/{id} 中的{id})",
+        "storage_method": "gm",
+        "null_ok_if": "CSDN_QC_DOMAIN_ID"
+    },
+    "CSDN_QC_DOMAIN_ID": {
+        "hint": "CSDN ID (即个人主页 https://{id}.blog.csdn.net 中的{id})",
+        "storage_method": "gm",
+        "null_ok_if": "CSDN_QC_ID"
+    },
 }
 
-var csdn_id = base_config;
+// return true if value equals to null
+function isNull(value){
+    let special_null = [null, "null", "", undefined, NaN, "undefined"];
+    return special_null.includes(value);
+}
 
 function createAButton(element,value,onclick,css,cla="temp"){
     var Button = document.createElement("input");
@@ -76,87 +100,162 @@ function webQuest(url, method, headers, data, callback) {
         if (xhr.readyState === 4 && xhr.status === 200) {
             // 处理响应
             callback(xhr.responseText);
-        } else if (xhr.status !== 200) {
-            alert("请求 " + url + " 失败，状态码：" + xhr.status + "，请在脚本面板中重新设置 Headers/CSDN ID 或者检查网络代理等状况。" );
+        } else if (xhr.readyState === 4) {
+            alert("请求 " + url + " 失败，状态码：" + xhr.status + "，data：" + data);
         }
     };
 }
 
-function questQC(headers, csdn_id) {
+function get_csdn_id(){
+    // get csdn_id from href
+    let href = window.location.href;
+    let id_info = { id: null, id_type: null}
+    // get csdn_id from href, eg: https://blog.csdn.net/{id}/article/details/138357755
+    id_info.id = href.match(/blog.csdn.net\/(\w+)/);
+    id_info.id_type = "CSDN_QC_ID";
+    // get csdn_id from href, eg: https://{id}.blog.csdn.net/article/details/138357755
+    if (id_info.id == null){
+        id_info.id = href.match(/(\w+)\.blog.csdn.net/);
+        id_info.id_type = "CSDN_QC_DOMAIN_ID";
+    }
+    if (id_info.id != null){
+        id_info.id = id_info.id[1];
+    }
+    return id_info;
+}
+
+function get_article_id(){
+    // get article_id from href
+    let href = window.location.href;
+    let url = null;
+    // get article_id from href, eg: https://editor.csdn.net/md?not_checkout=1&spm=1011.2415.3001.6217&articleId=138357755
+    let id = href.match(/articleId=(\d+)/);
+    // get article_id from href, eg: https://shandianchengzi.blog.csdn.net/article/details/138357755?spm=1001.2014.3001.5502
+    if (id == null){
+        id = href.match(/details\/(\d+)/);
+    }
+    if (id == null){
+        return null;
+    }
+    return id[1];
+}
+
+function get_article_url(values_info){
+    let id = get_article_id();
+    if (isNull(id)){
+        alert("请先进入文章页面或编辑页再点击查询！");
+        return null;
+    }
+    if (!isNull(values_info["CSDN_QC_ID"]["value"])){
+        return "https://blog.csdn.net/" + values_info["CSDN_QC_ID"]["value"] + "/article/details/" + id;
+    }
+    if (!isNull(values_info["CSDN_QC_DOMAIN_ID"]["value"])){
+        return "https://" + values_info["CSDN_QC_DOMAIN_ID"]["value"] + ".blog.csdn.net/article/details/" + id;
+    }
+    alert("请先配置 CSDN ID 再重新查询！");
+    return null;
+}
+
+function get_headers(values_info){
+    // check if the values are null
+    if (isNull(values_info["CSDN_QC_X-Ca-Key"]["value"]) || isNull(values_info["CSDN_QC_X-Ca-Nonce"]["value"]) || isNull(values_info["CSDN_QC_X-Ca-Signature"]["value"])){
+        alert("请先配置 X-Ca-Key、X-Ca-Nonce、X-Ca-Signature 再重新查询！");
+        return null;
+    }
+    var headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json, text/plain, */*",
+        "X-Ca-Key": values_info["CSDN_QC_X-Ca-Key"]["value"],
+        "X-Ca-Nonce": values_info["CSDN_QC_X-Ca-Nonce"]["value"],
+        "X-Ca-Signature": values_info["CSDN_QC_X-Ca-Signature"]["value"],
+        "X-Ca-Signature-Headers": "x-ca-key,x-ca-nonce",
+        "X-Ca-Signed-Content-Type": "multipart/form-data",
+    }
+    return headers;
+}
+
+function questQC(values_info) {
     var url = "https://bizapi.csdn.net/trends/api/v1/get-article-score";
     var method = "POST";
-    let href = window.location.href;
-    // eg: https://editor.csdn.net/md?not_checkout=1&spm=1011.2415.3001.6217&articleId=138357755
-    let id = href.match(/articleId=(\d+)/)[1];
-    var data = "url=https://blog.csdn.net/" + csdn_id + "/article/details/" + id;
     var callback = function (ret) {
         var response = JSON.parse(ret);
         Toast("质量分: " + response.data.score, 2000);
     }
-    // check headers
-    if (headers["X-Ca-Key"] == base_config || headers["X-Ca-Nonce"] == base_config || headers["X-Ca-Signature"] == base_config) {
-        alert("请先填写 headers 参数再重新查询！");
-        fill_headers();
+    let article_url = get_article_url(values_info);
+    let headers = get_headers(values_info);
+    // check article_url and headers
+    if (isNull(article_url) || isNull(headers)){
+        fill_values(false, true);
         return;
     }
-    // check csdn_id
-    if (csdn_id == base_config) {
-        alert("请先配置 CSDN ID 再重新查询！");
-        fill_csdn_id();
-        return;
-    }
+    var data = "url=" + article_url;
     webQuest(url, method, headers, data, callback);
 }
 
-function userSetValue(key, hint=null) {
+function userSetValue(key, hint=null, mode="gm", get_value=true){
+    /* key: the key of the value
+    * hint: the hint of the value
+    * only_fill_null: if true, only fill the value when it is null
+    * mode: storage or gm, storage: store in local storage, gm: store in GM_setValue
+    * value: the value of the key
+    * return: the value of the key
+    */
     if (hint == null) hint = "请输入" + key + "的值";
-    var local_value = localStorage.getItem(key); // When the key does not exist, the return value is "null"
-    let ret = window.prompt(hint, local_value);
-    if (ret != null) {
-        localStorage.setItem(key, ret);
-        return ret;
+    var local_value = null;
+    // storage: store in local storage, just used on the current domain
+    if (mode == "storage") {
+        local_value = localStorage.getItem(key);
+    // gm: store in GM_setValue, can be used on all domains
+    } else if (mode == "gm") {
+        local_value = GM_getValue(key);
     }
+
+    // if need to get value from user, prompt user to input
+    if (get_value) {
+        // get value from user
+        let ret = window.prompt(hint, local_value);
+        if (ret != null) {
+            if (mode == "storage") {
+                localStorage.setItem(key, ret);
+            } else if (mode == "gm") {
+                GM_setValue(key, ret);
+            }
+            local_value = ret;
+        }
+    }
+
     return local_value;
 }
 
-function fill_headers(){
-    // store headers in local storage
-    var cakey = userSetValue("CSDN_QC_X-Ca-Key", "X-Ca-Key");
-    var canonce = userSetValue("CSDN_QC_X-Ca-Nonce", "X-Ca-Nonce");
-    var casignature = userSetValue("CSDN_QC_X-Ca-Signature", "X-Ca-Signature");
-    // set headers
-    headers["X-Ca-Key"] = cakey;
-    headers["X-Ca-Nonce"] = canonce;
-    headers["X-Ca-Signature"] = casignature;
-}
-
-function fill_csdn_id(){
-    // store csdn_id in local storage
-    var id = userSetValue("CSDN_QC_ID", "CSDN ID");
-    // set csdn_id
-    csdn_id = id;
+function fill_values(only_fill_null=false, get_value=true){
+    for (var key in values_info) {
+        var value = values_info[key];
+        if (only_fill_null && !isNull(value["value"])) {
+            continue;
+        }
+        if (!isNull(value["null_ok_if"])){
+            // if the value is not null, then skip
+            if (!isNull(values_info[value["null_ok_if"]]["value"])) {
+                continue;
+            }
+        }
+        values_info[key]["value"] = userSetValue(key, value["hint"], value["storage_method"], get_value);
+    }
 }
 
 function init(){
-    // get headers from local storage
-    var cakey = localStorage.getItem("CSDN_QC_X-Ca-Key");
-    var canonce = localStorage.getItem("CSDN_QC_X-Ca-Nonce");
-    var casignature = localStorage.getItem("CSDN_QC_X-Ca-Signature");
-    // set headers
-    headers["X-Ca-Key"] = cakey;
-    headers["X-Ca-Nonce"] = canonce;
-    headers["X-Ca-Signature"] = casignature;
-    // get csdn_id from local storage
-    var id = localStorage.getItem("CSDN_QC_ID");
-    // set csdn_id
-    csdn_id = id;
+    // try to get csdn_id from href
+    let id_info = get_csdn_id();
+    values_info[id_info.id_type]["value"] = id_info.id;
+    // fill values but not get value from user
+    fill_values(true, false);
 }
 
 async function mainFunc(){
     // init headers and csdn_id
     init();
-    createAButton(document.body,"质量分查询",function(){questQC(headers, csdn_id);},
-    "height:75px;position:absolute;z-index:999;");
+    createAButton(document.body,"质量分查询",function(){questQC(values_info);},
+    "height:75px;position:absolute;z-index:999;top:5%;left:1%");
 }
 
 (function() {
@@ -173,6 +272,5 @@ async function mainFunc(){
         }
     }
     // add menu
-    GM_registerMenuCommand("headers 参数填写", fill_headers);
-    GM_registerMenuCommand("配置 CSDN ID", fill_csdn_id);
+    GM_registerMenuCommand("参数填写", fill_values);
 })();
